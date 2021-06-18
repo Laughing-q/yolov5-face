@@ -112,7 +112,6 @@ def detect(save_img=False):
             s += '%gx%g ' % img.shape[2:]  # print string
             gn = torch.tensor(im0.shape)[[1, 0, 1,
                                           0]]  # normalization gain whwh
-            gn_lks = torch.tensor(im0.shape)[[1, 0, 1, 0, 1, 0, 1, 0, 1, 0]].to(device)  # normalization gain landmarks
             if len(det):
                 # Rescale boxes from img_size to im0 size
                 det[:, :4] = scale_coords(img.shape[2:], det[:, :4],
@@ -128,10 +127,10 @@ def detect(save_img=False):
                 # Write results
                 for di, (*xyxy, conf, cls) in enumerate(reversed(det[:, :6])):
                     landmarks = det[di, 6:]   # xy * 5
-                    xywh = (xyxy2xywh(torch.tensor(xyxy).view(1, 4)) /
-                                gn).view(-1).tolist()  # normalized xywh
                     # show_results(im0, landmarks)
                     if save_txt:  # Write to file
+                        xywh = (xyxy2xywh(torch.tensor(xyxy).view(1, 4)) /
+                                gn).view(-1).tolist()  # normalized xywh
                         line = (cls, *xywh, conf) if opt.save_conf else (
                             cls, *xywh)  # label format
                         with open(txt_path + '.txt', 'a') as f:
@@ -198,7 +197,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--source',
         type=str,
-        default='0',
+        default='/e/1.avi',
         help='source')  # file/folder, 0 for webcam
     parser.add_argument('--img-size',
                         type=int,

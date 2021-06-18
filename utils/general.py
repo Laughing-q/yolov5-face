@@ -77,12 +77,41 @@ def check_git_status():
         print(e)
 
 
-def check_requirements(file='requirements.txt'):
-    # Check installed dependencies meet requirements
-    import pkg_resources
-    requirements = pkg_resources.parse_requirements(Path(file).open())
-    requirements = [x.name + ''.join(*x.specs) if len(x.specs) else x.name for x in requirements]
-    pkg_resources.require(requirements)  # DistributionNotFound or VersionConflict exception if requirements not met
+def check_requirements(requirements='requirements.txt', exclude=()):
+    # Check installed dependencies meet requirements (pass *.txt file or list of packages)
+    import pkg_resources as pkg
+    prefix = colorstr('red', 'bold', 'requirements:')
+    if isinstance(requirements, (str, Path)):  # requirements.txt file
+        file = Path(requirements)
+        if not file.exists():
+            print(f"{prefix} {file.resolve()} not found, check failed.")
+            return
+        requirements = [
+            f'{x.name}{x.specifier}'
+            for x in pkg.parse_requirements(file.open())
+            if x.name not in exclude
+        ]
+    else:  # list or tuple of packages
+        requirements = [x for x in requirements if x not in exclude]
+
+    n = 0  # number of packages updates
+    for r in requirements:
+        try:
+            pkg.require(r)
+        except Exception as e:  # DistributionNotFound or VersionConflict if requirements not met
+            n += 1
+            print(
+                f"{prefix} {e.req} not found and is required by YOLOv5, attempting auto-update..."
+            )
+            print(
+                subprocess.check_output(f"pip install '{e.req}'",
+                                        shell=True).decode())
+
+    if n:  # if packages updated
+        source = file.resolve() if 'file' in locals() else requirements
+        s = f"{prefix} {n} package{'s' * (n > 1)} updated per {source}\n" \
+            f"{prefix} ⚠️ {colorstr('bold', 'Restart runtime or rerun command for updates to take effect')}\n"
+        print(emojis(s))  # emoji-safe
 
 
 def check_img_size(img_size, s=32):
@@ -233,7 +262,7 @@ def xywhn2xyxy(x, w=640, h=640, padw=32, padh=32):
     return y
 
 
-def scale_coords(img1_shape, coords, img0_shape, ratio_pad=None):
+def scale_coords(img1_shape, coords, img0_shape, ratio_pad=None, landmark=False):
     # Rescale coords (xyxy) from img1_shape to img0_shape
     if ratio_pad is None:  # calculate from img0_shape
         gain = min(img1_shape[0] / img0_shape[0], img1_shape[1] / img0_shape[1])  # gain  = old / new
@@ -242,19 +271,44 @@ def scale_coords(img1_shape, coords, img0_shape, ratio_pad=None):
         gain = ratio_pad[0][0]
         pad = ratio_pad[1]
 
-    coords[:, [0, 2]] -= pad[0]  # x padding
-    coords[:, [1, 3]] -= pad[1]  # y padding
-    coords[:, :4] /= gain
+    coords[:, 0::2] -= pad[0]  # x padding
+    coords[:, 1::2] -= pad[1]  # y padding
+
+    index = 10 if landmark else 4
+    coords[:, :index] /= gain
     clip_coords(coords, img0_shape)
     return coords
 
 
+# def scale_coords_landmarks(img1_shape, coords, img0_shape, ratio_pad=None):
+#     # Rescale coords (xyxy) from img1_shape to img0_shape
+#     if ratio_pad is None:  # calculate from img0_shape
+#         gain = min(img1_shape[0] / img0_shape[0], img1_shape[1] / img0_shape[1])  # gain  = old / new
+#         pad = (img1_shape[1] - img0_shape[1] * gain) / 2, (img1_shape[0] - img0_shape[0] * gain) / 2  # wh padding
+#     else:
+#         gain = ratio_pad[0][0]
+#         pad = ratio_pad[1]
+#
+#     # coords[:, [0, 2, 4, 6, 8]] -= pad[0]  # x padding
+#     # coords[:, [1, 3, 5, 7, 9]] -= pad[1]  # y padding
+#
+#     coords[:, 0::2] -= pad[0]  # x padding
+#     coords[:, 1::2] -= pad[1]  # y padding
+#
+#     coords[:, :10] /= gain
+#     #clip_coords(coords, img0_shape)
+#
+#     clip_coords(coords, img0_shape)
+#     return coords
+
 def clip_coords(boxes, img_shape):
     # Clip bounding xyxy bounding boxes to image shape (height, width)
-    boxes[:, 0].clamp_(0, img_shape[1])  # x1
-    boxes[:, 1].clamp_(0, img_shape[0])  # y1
-    boxes[:, 2].clamp_(0, img_shape[1])  # x2
-    boxes[:, 3].clamp_(0, img_shape[0])  # y2
+    # boxes[:, 0].clamp_(0, img_shape[1])  # x1
+    # boxes[:, 1].clamp_(0, img_shape[0])  # y1
+    # boxes[:, 2].clamp_(0, img_shape[1])  # x2
+    # boxes[:, 3].clamp_(0, img_shape[0])  # y2
+    boxes[:, 0::2].clamp_(0, img_shape[1])
+    boxes[:, 1::2].clamp_(0, img_shape[1])
 
 
 def bbox_iou(box1, box2, x1y1x2y2=True, GIoU=False, DIoU=False, CIoU=False, eps=1e-9):
@@ -421,10 +475,10 @@ def non_max_suppression_face(prediction, conf_thres=0.25, iou_thres=0.45, classe
         # Detections matrix nx6 (xyxy, conf, landmarks, cls)
         if multi_label:
             i, j = (x[:, 15:] > conf_thres).nonzero(as_tuple=False).T
-            x = torch.cat((box[i], x[i, j + 15, None], x[:, 5:15] ,j[:, None].float()), 1)
+            x = torch.cat((box[i], x[i, j + 15, None], j[:, None].float(), x[:, 5:15] ), 1)
         else:  # best class only
             conf, j = x[:, 15:].max(1, keepdim=True)
-            x = torch.cat((box, conf, x[:, 5:15], j.float()), 1)[conf.view(-1) > conf_thres]
+            x = torch.cat((box, conf, j.float(), x[:, 5:15]), 1)[conf.view(-1) > conf_thres]
 
         # Filter by class
         if classes is not None:
@@ -436,7 +490,7 @@ def non_max_suppression_face(prediction, conf_thres=0.25, iou_thres=0.45, classe
             continue
 
         # Batched NMS
-        c = x[:, 15:16] * (0 if agnostic else max_wh)  # classes
+        c = x[:, 5:6] * (0 if agnostic else max_wh)  # classes
         boxes, scores = x[:, :4] + c, x[:, 4]  # boxes (offset by class), scores
         i = torchvision.ops.nms(boxes, scores, iou_thres)  # NMS
         #if i.shape[0] > max_det:  # limit detections

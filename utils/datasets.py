@@ -119,9 +119,8 @@ class _RepeatSampler(object):
 
 
 class LoadImages:  # for inference
-    def __init__(self, path, img_size=640):
-        p = str(Path(path))  # os-agnostic
-        p = os.path.abspath(p)  # absolute path
+    def __init__(self, path, img_size=640, stride=32):
+        p = str(Path(path).absolute())  # os-agnostic absolute path
         if '*' in p:
             files = sorted(glob.glob(p, recursive=True))  # glob
         elif os.path.isdir(p):
@@ -136,6 +135,7 @@ class LoadImages:  # for inference
         ni, nv = len(images), len(videos)
 
         self.img_size = img_size
+        self.stride = stride
         self.files = images + videos
         self.nf = ni + nv  # number of files
         self.video_flag = [False] * ni + [True] * nv
@@ -171,7 +171,9 @@ class LoadImages:  # for inference
                     ret_val, img0 = self.cap.read()
 
             self.frame += 1
-            print(f'video {self.count + 1}/{self.nf} ({self.frame}/{self.nframes}) {path}: ', end='')
+            print(
+                f'video {self.count + 1}/{self.nf} ({self.frame}/{self.nframes}) {path}: ',
+                end='')
 
         else:
             # Read image
@@ -181,7 +183,7 @@ class LoadImages:  # for inference
             print(f'image {self.count}/{self.nf} {path}: ', end='')
 
         # Padded resize
-        img = letterbox(img0, new_shape=self.img_size)[0]
+        img = letterbox(img0, self.img_size, stride=self.stride)[0]
 
         # Convert
         img = img[:, :, ::-1].transpose(2, 0, 1)  # BGR to RGB, to 3x416x416
@@ -199,8 +201,9 @@ class LoadImages:  # for inference
 
 
 class LoadWebcam:  # for inference
-    def __init__(self, pipe='0', img_size=640):
+    def __init__(self, pipe='0', img_size=640, stride=32):
         self.img_size = img_size
+        self.stride = stride
 
         if pipe.isnumeric():
             pipe = eval(pipe)  # local camera
@@ -243,7 +246,7 @@ class LoadWebcam:  # for inference
         print(f'webcam {self.count}: ', end='')
 
         # Padded resize
-        img = letterbox(img0, new_shape=self.img_size)[0]
+        img = letterbox(img0, self.img_size, stride=self.stride)[0]
 
         # Convert
         img = img[:, :, ::-1].transpose(2, 0, 1)  # BGR to RGB, to 3x416x416
@@ -256,38 +259,55 @@ class LoadWebcam:  # for inference
 
 
 class LoadStreams:  # multiple IP or RTSP cameras
-    def __init__(self, sources='streams.txt', img_size=640):
+    def __init__(self, sources='streams.txt', img_size=640, stride=32):
         self.mode = 'stream'
         self.img_size = img_size
+        self.stride = stride
 
         if os.path.isfile(sources):
             with open(sources, 'r') as f:
-                sources = [x.strip() for x in f.read().strip().splitlines() if len(x.strip())]
+                sources = [
+                    x.strip() for x in f.read().strip().splitlines()
+                    if len(x.strip())
+                ]
         else:
             sources = [sources]
 
         n = len(sources)
         self.imgs = [None] * n
-        self.sources = [clean_str(x) for x in sources]  # clean source names for later
+        self.sources = [clean_str(x)
+                        for x in sources]  # clean source names for later
         for i, s in enumerate(sources):
             # Start the thread to read frames from the video stream
             print(f'{i + 1}/{n}: {s}... ', end='')
-            cap = cv2.VideoCapture(eval(s) if s.isnumeric() else s)
+            url = eval(s) if s.isnumeric() else s
+            # if 'youtube.com/' in url or 'youtu.be/' in url:  # if source is YouTube video
+            #     check_requirements(('pafy', 'youtube_dl'))
+            #     import pafy
+            #     url = pafy.new(url).getbest(preftype="mp4").url
+            cap = cv2.VideoCapture(url)
             assert cap.isOpened(), f'Failed to open {s}'
             w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
             h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-            fps = cap.get(cv2.CAP_PROP_FPS) % 100
+            self.fps = cap.get(cv2.CAP_PROP_FPS) % 100
+
             _, self.imgs[i] = cap.read()  # guarantee first frame
             thread = Thread(target=self.update, args=([i, cap]), daemon=True)
-            print(f' success ({w}x{h} at {fps:.2f} FPS).')
+            print(f' success ({w}x{h} at {self.fps:.2f} FPS).')
             thread.start()
         print('')  # newline
 
         # check for common shapes
-        s = np.stack([letterbox(x, new_shape=self.img_size)[0].shape for x in self.imgs], 0)  # inference shapes
-        self.rect = np.unique(s, axis=0).shape[0] == 1  # rect inference if all shapes equal
+        s = np.stack([
+            letterbox(x, self.img_size, stride=self.stride)[0].shape
+            for x in self.imgs
+        ], 0)  # shapes
+        self.rect = np.unique(
+            s, axis=0).shape[0] == 1  # rect inference if all shapes equal
         if not self.rect:
-            print('WARNING: Different stream shapes detected. For optimal performance supply similarly-shaped streams.')
+            print(
+                'WARNING: Different stream shapes detected. For optimal performance supply similarly-shaped streams.'
+            )
 
     def update(self, index, cap):
         # Read next stream frame in a daemon thread
@@ -297,9 +317,10 @@ class LoadStreams:  # multiple IP or RTSP cameras
             # _, self.imgs[index] = cap.read()
             cap.grab()
             if n == 4:  # read every 4th frame
-                _, self.imgs[index] = cap.retrieve()
+                success, im = cap.retrieve()
+                self.imgs[index] = im if success else self.imgs[index] * 0
                 n = 0
-            time.sleep(0.01)  # wait time
+            time.sleep(1 / self.fps)  # wait time
 
     def __iter__(self):
         self.count = -1
@@ -313,13 +334,17 @@ class LoadStreams:  # multiple IP or RTSP cameras
             raise StopIteration
 
         # Letterbox
-        img = [letterbox(x, new_shape=self.img_size, auto=self.rect)[0] for x in img0]
+        img = [
+            letterbox(x, self.img_size, auto=self.rect, stride=self.stride)[0]
+            for x in img0
+        ]
 
         # Stack
         img = np.stack(img, 0)
 
         # Convert
-        img = img[:, :, :, ::-1].transpose(0, 3, 1, 2)  # BGR to RGB, to bsx3x416x416
+        img = img[:, :, :, ::-1].transpose(0, 3, 1,
+                                           2)  # BGR to RGB, to bsx3x416x416
         img = np.ascontiguousarray(img)
 
         return self.sources, img, img0, None
@@ -777,8 +802,14 @@ def replicate(img, labels):
     return img, labels
 
 
-def letterbox(img, new_shape=(640, 640), color=(114, 114, 114), auto=True, scaleFill=False, scaleup=True):
-    # Resize image to a 32-pixel-multiple rectangle https://github.com/ultralytics/yolov3/issues/232
+def letterbox(img,
+              new_shape=(640, 640),
+              color=(114, 114, 114),
+              auto=True,
+              scaleFill=False,
+              scaleup=True,
+              stride=32):
+    # Resize and pad image while meeting stride-multiple constraints
     shape = img.shape[:2]  # current shape [height, width]
     if isinstance(new_shape, int):
         new_shape = (new_shape, new_shape)
@@ -791,13 +822,15 @@ def letterbox(img, new_shape=(640, 640), color=(114, 114, 114), auto=True, scale
     # Compute padding
     ratio = r, r  # width, height ratios
     new_unpad = int(round(shape[1] * r)), int(round(shape[0] * r))
-    dw, dh = new_shape[1] - new_unpad[0], new_shape[0] - new_unpad[1]  # wh padding
+    dw, dh = new_shape[1] - new_unpad[0], new_shape[0] - new_unpad[
+        1]  # wh padding
     if auto:  # minimum rectangle
-        dw, dh = np.mod(dw, 64), np.mod(dh, 64)  # wh padding
+        dw, dh = np.mod(dw, stride), np.mod(dh, stride)  # wh padding
     elif scaleFill:  # stretch
         dw, dh = 0.0, 0.0
         new_unpad = (new_shape[1], new_shape[0])
-        ratio = new_shape[1] / shape[1], new_shape[0] / shape[0]  # width, height ratios
+        ratio = new_shape[1] / shape[1], new_shape[0] / shape[
+            0]  # width, height ratios
 
     dw /= 2  # divide padding into 2 sides
     dh /= 2
@@ -806,7 +839,13 @@ def letterbox(img, new_shape=(640, 640), color=(114, 114, 114), auto=True, scale
         img = cv2.resize(img, new_unpad, interpolation=cv2.INTER_LINEAR)
     top, bottom = int(round(dh - 0.1)), int(round(dh + 0.1))
     left, right = int(round(dw - 0.1)), int(round(dw + 0.1))
-    img = cv2.copyMakeBorder(img, top, bottom, left, right, cv2.BORDER_CONSTANT, value=color)  # add border
+    img = cv2.copyMakeBorder(img,
+                             top,
+                             bottom,
+                             left,
+                             right,
+                             cv2.BORDER_CONSTANT,
+                             value=color)  # add border
     return img, ratio, (dw, dh)
 
 
