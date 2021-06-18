@@ -112,7 +112,7 @@ if __name__ == "__main__":
     detector = Yolov5Face(weight_path='weights/yolov5s-face.pt', device='0', img_hw=(640, 640))
 
     detector.show = True
-    cap = cv2.VideoCapture('/e/1.avi')
+    cap = cv2.VideoCapture(0)
     while cap.isOpened():
         ret, frame = cap.read()
         if not ret:

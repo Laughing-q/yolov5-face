@@ -192,12 +192,12 @@ if __name__ == '__main__':
         '--weights',
         nargs='+',
         type=str,
-        default='/d/projects/yolov5-face/weights/yolov5s-face.pt',
+        default='./weights/yolov5s-face.pt',
         help='model.pt path(s)')
     parser.add_argument(
         '--source',
         type=str,
-        default='/e/1.avi',
+        default='0',
         help='source')  # file/folder, 0 for webcam
     parser.add_argument('--img-size',
                         type=int,
