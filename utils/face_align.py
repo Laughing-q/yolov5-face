@@ -92,7 +92,6 @@ def norm_crop(img, landmark, image_size=112, mode='arcface'):
 
 def crop(img, det, image_size=112, mode='arcface'):
     # cv2.imshow("before", img)
-    print(det)
     warped = img[int(det[1]):int(det[3]), int(det[0]):int(det[2]), :]
     warped = cv2.resize(warped, (image_size, image_size))
     return warped
@@ -108,5 +107,6 @@ def align_img(img, landmarks, size=224):
         point_y = int(landmarks[2 * i + 1])
         finalmarks.append([point_x, point_y])
     finalmarks = np.array(finalmarks)
-    alignedImg = norm_crop(img.copy(), landmark=finalmarks, image_size=224)
+    alignedImg = norm_crop(img.copy(), landmark=finalmarks)
+    cv2.resize(alignedImg, (size, size), alignedImg)
     return alignedImg

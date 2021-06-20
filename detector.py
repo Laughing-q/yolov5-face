@@ -86,6 +86,9 @@ class Yolov5Face:
                 #     pred[i] = det
                 for di, (*xyxy, conf, cls) in enumerate(reversed(det[:, :6])):
                     landmarks = det[di, 6:]   # xy * 5
+                    # alignImg = align_img(img0s[i], landmarks, 224)
+                    # cv2.imshow('x', alignImg)
+                    # cv2.waitKey(1)
                     output[self.names[int(cls)]] += 1
                     # label = '%s %.2f' % (self.names[int(cls)], conf)
                     label = '%s' % (self.names[int(cls)])
@@ -93,9 +96,10 @@ class Yolov5Face:
                     # xyxy = [int(i) for i in xyxy]
                     # im0[xyxy[1]:xyxy[3], xyxy[0]:xyxy[2], :] = 114
                     # if not self.names[int(cls)] in ['uniform', 'no-uniform']:
-                    plot_one_box(xyxy, img0s[i], label=None,
-                                 color=self.colors[int(cls)], 
-                                 line_thickness=2, landmarks=landmarks)
+                    if self.show:
+                        plot_one_box(xyxy, img0s[i], label=None,
+                                     color=self.colors[int(cls)], 
+                                     line_thickness=2, landmarks=landmarks)
 
         if self.show:
             for i in range(len(img0s)):
