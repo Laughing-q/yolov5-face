@@ -2,6 +2,7 @@
 
 import numpy as np
 import torch
+import yaml
 import torch.nn as nn
 
 from models.common import Conv, DWConv
@@ -116,6 +117,8 @@ def attempt_load(weights, map_location=None):
     for w in weights if isinstance(weights, list) else [weights]:
         attempt_download(w)
         model.append(torch.load(w, map_location=map_location)['model'].float().fuse().eval())  # load FP32 model
+        # with open('hyp.yaml', 'w') as f:
+            # yaml.dump(torch.load(w, map_location=map_location)['model'].yaml, f, sort_keys=False)
 
     # Compatibility updates
     for m in model.modules():

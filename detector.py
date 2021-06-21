@@ -17,6 +17,7 @@ class Yolov5Face:
         self.device = select_device(device)
         self.half = True
         self.model = attempt_load(self.weights, map_location=self.device)
+        # torch.save(self.model.state_dict(), weight_path.replace('pt', 'pth'))
         if self.half:
             self.model.half()  # to FP16
         self.names = self.model.module.names if hasattr(
