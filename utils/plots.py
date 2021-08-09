@@ -15,7 +15,7 @@ import pandas as pd
 import seaborn as sns
 import torch
 import yaml
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont
 from scipy.signal import butter, filtfilt
 
 from utils.general import xywh2xyxy, xyxy2xywh
@@ -78,6 +78,27 @@ def plot_one_box(x, img, color=None, label=None, line_thickness=None, landmarks=
             point_y = int(landmarks[2 * i + 1])
             cv2.circle(img, (point_x, point_y), tl+1, clors[i], -1)
         
+
+def plot_one_box_PIL(box, im, color=(128, 128, 128), label=None, line_thickness=None):
+    """使用Pillow画单个框
+    x: 坐标，xyxy格式左上角右下角
+    im:原图
+    """
+    # Plots one bounding box on image 'im' using PIL
+    # numpy/cv2转化为Pillow格式
+    im = Image.fromarray(im)
+    draw = ImageDraw.Draw(im)
+    line_thickness = line_thickness or max(int(min(im.size) / 200), 2)
+    draw.rectangle(box, width=line_thickness, outline=color)  # plot
+    if label:
+        # font = ImageFont.truetype("/usr/share/fonts/truetype/arphic/ukai.ttc", size=max(round(max(im.size) / 40), 12))
+        font = ImageFont.truetype("/usr/share/fonts/truetype/arphic/ukai.ttc", size=15)
+        txt_width, txt_height = font.getsize(label)
+        # draw.rectangle([box[0], box[1] - txt_height + 4, box[0] + txt_width, box[1]], fill=color)
+        # draw.text((box[0], box[1] - txt_height + 1), label, fill=(255, 255, 255), font=font)
+        draw.text((box[2], box[1] - txt_height + 1), label, fill=(0, 0, 255), font=font)
+    return np.asarray(im)
+
 
 def plot_wh_methods():  # from utils.plots import *; plot_wh_methods()
     # Compares the two methods for width-height anchor multiplication

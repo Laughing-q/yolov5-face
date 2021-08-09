@@ -698,3 +698,119 @@ def increment_path(path, exist_ok=True, sep=''):
         i = [int(m.groups()[0]) for m in matches if m]  # indices
         n = max(i) + 1 if i else 2  # increment number
         return f"{path}{sep}{n}"  # update path
+
+
+def isPointinPolygon_np(points, rangelist):  # [[0,0],[1,1],[0,1],[0,0]] [1,0.8]
+    """
+    :param points: numpy, 坐标xy,shape(num_points, 2)
+    :param rangelist: rangelist.shape=(N+1, 2), N边形的点的坐标,要有顺序,最后一个点要和第一个点重合,所以有N+1个点
+    :return: points in rangelist or not
+    """
+    if len(points) == 0 or len(rangelist) == 0:
+        # print(f'len(points) is {len(points)}')
+        # print(f'len(rangelist) is {len(rangelist)}')
+        return []
+    if isinstance(points, torch.Tensor):
+        points = points.cpu().numpy()
+    points = np.array(points)
+    # assert isinstance(points, np.ndarray), f'points must be numpy type'
+    if len(points.shape) == 1:
+        points = points[None, :]
+    assert points.shape[1] == 2, f'points shape must be 2'
+    assert (rangelist[0] == rangelist[-1]).all(), f'rangelist[0] and rangelist[-1] must be equal'
+    rangelist = np.array(rangelist)
+
+    count = np.zeros_like(points)[:, 0]
+    point1 = rangelist[0]
+    # 沿着点point做平行x轴的射线 看交点数量，交点数量 % 2 == 0则在外部，否则在内部
+    for i in range(1, len(rangelist)):
+        point2 = rangelist[i]
+        # 判断线段两端点是否在射线两侧不在肯定不相交射线（-∞，lat）（lng, lat）
+        index = ((point1[1] < points[:, 1]) * (point2[1] >= points[:, 1])) + (
+                (point1[1] >= points[:, 1]) * (point2[1] < points[:, 1]))
+
+        """
+        求线段与射线交点 再和point的lat比较
+        先取满足index条件的跑points计算,防止(point2[1] - point1[1])==0，出现nan的情况
+        此方法会稍稍慢一些(大约0.0几毫秒)，但比for原本的for循环快多了
+        """
+        # ind记录索引
+        ind = np.nonzero(index)
+        points_ = points[index]
+        point12lng_part = point2[0] - (point2[1] - points_[:, 1]) * (point2[0] - point1[0]) / (point2[1] - point1[1])
+        point12lng = np.zeros_like(points)[:, 0]
+        point12lng[ind] = point12lng_part
+        # print(ind, point12lng)
+
+        """
+        由于要获取每个点判断的索引信息，所以这里不是point12lng[index],而是point12lng * index,
+        但是一旦碰到(point2[1] - point1[1])==0，也就是平行线的时候，出现除数为nan的话就会多计数一次,就会出问题，有原本在区域内为True，就变成了False
+        只要roi点的y坐标没有相等的，此方法就能正确使用，且此方法速度会稍稍快一些。
+        """
+        # point12lng = point2[0] - (point2[1] - points[:, 1]) * (point2[0] - point1[0]) / (point2[1] - point1[1])
+        # point12lng = point12lng * index
+        # print(point12lng)
+        # print('point12lng:', np.nonzero(point12lng))
+
+        # 判断小于<, 表示射线向x轴左边射
+        count[(point12lng < points[:, 0]) * point12lng != 0] += 1
+        point1 = point2
+    # print(count)
+    return np.array(count % 2, dtype=np.bool)
+    # return count
+
+
+def polygon_ROIarea(bbox, rangelist, frame=None):
+    """
+    Args:
+        bbox: [num_box, 4], xyxy
+        left_top:tuple(left, top)
+        right_buttom:tuple(right, bottom)
+        frame: frame
+    Returns:
+        bool: if people in roi or not
+    """
+    if len(bbox) == 0 or len(rangelist) == 0:
+        # print(f'len(bbox) is {len(bbox)}')
+        # print(f'len(rangelist) is {len(rangelist)}')
+        return False, []
+    if isinstance(bbox, torch.Tensor):
+        bbox = bbox.cpu().numpy()
+    bbox = np.array(bbox)
+    # assert isinstance(bbox, np.ndarray), f'bbox must be numpy type'
+    if len(bbox.shape) == 1:
+        bbox = bbox[None, :]
+    assert bbox.shape[1] >= 4, f'bbox shape is not right'
+    # 判定点设置为框上下左右中点
+    # x，y中点坐标
+    x_center = (bbox[:, 0] + bbox[:, 2]) // 2
+    y_center = (bbox[:, 1] + bbox[:, 3]) // 2
+    # print(x_center.shape)
+    # 获取预测框的上下左右中点坐标
+    # top_center = np.stack((x_center, bbox[:, 1]), axis=1)
+    bottom_center = np.stack((x_center, bbox[:, 3]), axis=1)
+    # left_center = np.stack((bbox[:, 0], y_center), axis=1)
+    # right_center = np.stack((bbox[:, 2], y_center), axis=1)
+    # print(top_center.shape)
+    # 根据每个判定点判定检测的人在roi里的数量
+    # warn = np.array([isPointinPolygon(i, rangelist) for i in bottom_center])
+    warn = isPointinPolygon_np(bottom_center, rangelist)
+    total_num = warn.sum()
+    # print(total_num)
+    # if total_num > 0:
+    #     print('warning')
+    # 画出判定点
+    if frame is not None:
+        import cv2
+        for coord_bottom in bottom_center:
+            # cv2.circle(frame, (coord_top[0], coord_top[1]), 1, (0, 0, 255), 10)
+            cv2.circle(frame, (coord_bottom[0], coord_bottom[1]), 1, (0, 0, 255), 10)
+            # cv2.circle(frame, (coord_left[0], coord_left[1]), 1, (0, 0, 255), 10)
+            # cv2.circle(frame, (coord_right[0], coord_right[1]), 1, (0, 0, 255), 10)
+        # print(rangelist)
+        cv2.polylines(img=frame, pts=[rangelist], isClosed=True, color=(0, 0, 255), thickness=3)
+        if total_num > 0:
+            cv2.putText(frame, 'warning', tuple(rangelist[0]), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 255, 0), 3)
+    if total_num > 0:
+        return True, warn
+    return False, []

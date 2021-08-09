@@ -3,3 +3,4 @@ runs/
 __pycache__/
 utils/__pycache__/
 models/__pycache__/
+*.mp4

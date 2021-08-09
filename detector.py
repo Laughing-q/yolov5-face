@@ -6,9 +6,9 @@ import cv2
 from utils.datasets import LoadStreams, LoadImages, letterbox
 import numpy as np
 import torch
-from utils.plots import plot_one_box
+from utils.plots import plot_one_box, plot_one_box_PIL
 from utils.face_align import align_img
-from utils.general import non_max_suppression_face, scale_coords
+from utils.general import non_max_suppression_face, scale_coords, polygon_ROIarea
 
 
 class Yolov5Face:
@@ -27,6 +27,7 @@ class Yolov5Face:
         self.show = False
         self.img_hw = img_hw
         self.pause = False
+        # self.save = True
 
     def preprocess(self, image, auto=True):  # (h, w)
         if type(image) == str and os.path.isfile(image):
@@ -80,11 +81,11 @@ class Yolov5Face:
                     img.shape[2:], det[:, :4], img0s[i].shape).round()
                 det[:, 6:] = scale_coords(img.shape[2:], det[:, 6:], 
                                           img0s[i].shape, landmark=True).round()
-                # if areas is not None and len(areas[i]):
-                #     _, warn = polygon_ROIarea(
-                #         det[:, :4], areas[i], img0s[i])
-                #     det = det[warn]
-                #     pred[i] = det
+                if areas is not None and len(areas[i]):
+                    _, warn = polygon_ROIarea(
+                        det[:, :4], areas[i], frame=None)
+                    det = det[warn]
+                    pred[i] = det
                 for di, (*xyxy, conf, cls) in enumerate(reversed(det[:, :6])):
                     landmarks = det[di, 6:]   # xy * 5
                     # alignImg = align_img(img0s[i], landmarks, 224)
@@ -101,6 +102,10 @@ class Yolov5Face:
                         plot_one_box(xyxy, img0s[i], label=None,
                                      color=self.colors[int(cls)], 
                                      line_thickness=2, landmarks=landmarks)
+                        # label = '%s\n%s\n%s' % ("姓名:张红", "性别:女", "客户类型:VIP客户")
+                        # img0s[i] = plot_one_box_PIL(xyxy, img0s[i], label=label,
+                        #              color=tuple(self.colors[int(cls)]), 
+                        #              line_thickness=2)
 
         if self.show:
             for i in range(len(img0s)):
@@ -110,17 +115,41 @@ class Yolov5Face:
             self.pause = True if key == ord(' ') else False
             if key == ord('q') or key == ord('e') or key == 27:
                 exit()
-        return pred, output
+        return pred, output, img0s
 
 
 if __name__ == "__main__":
     detector = Yolov5Face(weight_path='weights/yolov5s-face.pt', device='0', img_hw=(640, 640))
 
     detector.show = True
-    cap = cv2.VideoCapture(0)
+    cap = cv2.VideoCapture('/e/datasets/贵阳银行/output.mp4')
+    frame_num = 0
+    areas = []
+    areas = np.array([[973, 287],
+                     [1239, 281],
+                     [1265, 635],
+                     [ 943, 810],
+                     [ 973, 287]])
+
+    fourcc = 'XVID'  # output video codec
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    vid_writer = cv2.VideoWriter(
+        './face.mp4', cv2.VideoWriter_fourcc(*fourcc), fps,
+        # save_path, cv2.VideoWriter_fourcc(*fourcc), fps,
+        (w, h))
     while cap.isOpened():
         ret, frame = cap.read()
+        # if frame_num == 0:
+            # for _ in range(4):
+            #     areas.append(cv2.selectROI('p', frame)[:2])
+            # areas.append(areas[0])
+            # areas = np.array(areas)
+            # print(areas)
         if not ret:
             break
         img, img_raw = detector.preprocess(frame, auto=True)
-        preds, _ = detector.dynamic_detect(img, [img_raw])
+        preds, _, img_raws = detector.dynamic_detect(img, [img_raw], areas=[areas], conf_threshold=0.5)
+        frame_num += 1
+        vid_writer.write(img_raws[0])
