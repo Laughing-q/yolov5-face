@@ -119,26 +119,30 @@ class Yolov5Face:
 
 
 if __name__ == "__main__":
-    detector = Yolov5Face(weight_path='weights/yolov5s-face.pt', device='0', img_hw=(640, 640))
+    detector = Yolov5Face(weight_path='/d/projects/yolov5-face/weights/yolov5n-0.5.pt', device='0', img_hw=(640, 640))
 
-    detector.show = True
-    cap = cv2.VideoCapture('/e/datasets/贵阳银行/output.mp4')
+    detector.show = False
+
+    save = False
+    save_path = './test'
+
+    cap = cv2.VideoCapture('/e/datasets/贵阳银行/face/yas_0715_2gui_face.mp4')
     frame_num = 0
     areas = []
-    areas = np.array([[973, 287],
-                     [1239, 281],
-                     [1265, 635],
-                     [ 943, 810],
-                     [ 973, 287]])
+    # areas = np.array([[973, 287],
+    #                  [1239, 281],
+    #                  [1265, 635],
+    #                  [ 943, 810],
+    #                  [ 973, 287]])
 
     fourcc = 'XVID'  # output video codec
     fps = cap.get(cv2.CAP_PROP_FPS)
     w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     vid_writer = cv2.VideoWriter(
-        './face.mp4', cv2.VideoWriter_fourcc(*fourcc), fps,
-        # save_path, cv2.VideoWriter_fourcc(*fourcc), fps,
-        (w, h))
+        # './face.mp4', cv2.VideoWriter_fourcc(*fourcc), fps,
+        save_path, cv2.VideoWriter_fourcc(*fourcc), fps,
+        (w, h)) if save else None
     while cap.isOpened():
         ret, frame = cap.read()
         # if frame_num == 0:
@@ -152,4 +156,5 @@ if __name__ == "__main__":
         img, img_raw = detector.preprocess(frame, auto=True)
         preds, _, img_raws = detector.dynamic_detect(img, [img_raw], areas=[areas], conf_threshold=0.5)
         frame_num += 1
-        vid_writer.write(img_raws[0])
+        if vid_writer is not None:
+            vid_writer.write(img_raws[0])

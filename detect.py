@@ -140,10 +140,13 @@ def detect(save_img=False):
                         label = f'{names[int(cls)]} {conf:.2f}'
                         plot_one_box(xyxy,
                                      im0,
-                                     label=label,
-                                     color=colors[int(cls)],
+                                     # label=label,
+                                     label=None,
+                                     # color=colors[int(cls)],
+                                     color=(0, 255, 255),
                                      line_thickness=2, 
-                                     landmarks=landmarks)
+                                     # landmarks=landmarks)
+                                     landmarks=None)
 
             # Print time (inference + NMS)
             print(f'{s}Done. ({t2 - t1:.3f}s)')
@@ -192,12 +195,12 @@ if __name__ == '__main__':
         '--weights',
         nargs='+',
         type=str,
-        default='./weights/yolov5s-face.pt',
+        default='./weights/yolov5l-face.pt',
         help='model.pt path(s)')
     parser.add_argument(
         '--source',
         type=str,
-        default='0',
+        default='/d/projects/kapao/output',
         help='source')  # file/folder, 0 for webcam
     parser.add_argument('--img-size',
                         type=int,
@@ -205,7 +208,7 @@ if __name__ == '__main__':
                         help='inference size (pixels)')
     parser.add_argument('--conf-thres',
                         type=float,
-                        default=0.5,
+                        default=0.4,
                         help='object confidence threshold')
     parser.add_argument('--iou-thres',
                         type=float,
