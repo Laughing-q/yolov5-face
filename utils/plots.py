@@ -74,8 +74,10 @@ def plot_one_box(x, img, color=None, label=None, line_thickness=None, landmarks=
     if landmarks is not None:
         clors = [(255, 0, 0),(0, 255, 0),(0, 0, 255),(255, 255, 0),(0, 255, 255)]
         for i in range(5):
-            point_x = int(landmarks[2 * i])
-            point_y = int(landmarks[2 * i + 1])
+            # point_x = int(landmarks[2 * i])
+            # point_y = int(landmarks[2 * i + 1])
+            point_x = int(landmarks[i][0])
+            point_y = int(landmarks[i][1])
             cv2.circle(img, (point_x, point_y), tl+1, clors[i], -1)
         
 

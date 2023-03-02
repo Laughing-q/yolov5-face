@@ -1,11 +1,13 @@
 import torch
 import torch.nn as nn
+import cv2
+import numpy as np
 
 
 def conv_bn(inp, oup, kernel, stride, padding=1):
     return nn.Sequential(
-        nn.Conv2d(inp, oup, kernel, stride, padding, bias=False),
-        nn.BatchNorm2d(oup), nn.ReLU(inplace=True))
+        nn.Conv2d(inp, oup, kernel, stride, padding, bias=False), nn.BatchNorm2d(oup), nn.ReLU(inplace=True)
+    )
 
 
 class InvertedResidual(nn.Module):
@@ -20,13 +22,9 @@ class InvertedResidual(nn.Module):
             nn.Conv2d(inp, inp * expand_ratio, 1, 1, 0, bias=False),
             nn.BatchNorm2d(inp * expand_ratio),
             nn.ReLU(inplace=True),
-            nn.Conv2d(inp * expand_ratio,
-                      inp * expand_ratio,
-                      3,
-                      stride,
-                      1,
-                      groups=inp * expand_ratio,
-                      bias=False),
+            nn.Conv2d(
+                inp * expand_ratio, inp * expand_ratio, 3, stride, 1, groups=inp * expand_ratio, bias=False
+            ),
             nn.BatchNorm2d(inp * expand_ratio),
             nn.ReLU(inplace=True),
             nn.Conv2d(inp * expand_ratio, oup, 1, 1, 0, bias=False),
@@ -44,21 +42,11 @@ class PFLDInference(nn.Module):
     def __init__(self):
         super(PFLDInference, self).__init__()
 
-        self.conv1 = nn.Conv2d(3,
-                               64,
-                               kernel_size=3,
-                               stride=2,
-                               padding=1,
-                               bias=False)
+        self.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=2, padding=1, bias=False)
         self.bn1 = nn.BatchNorm2d(64)
         self.relu = nn.ReLU(inplace=True)
 
-        self.conv2 = nn.Conv2d(64,
-                               64,
-                               kernel_size=3,
-                               stride=1,
-                               padding=1,
-                               bias=False)
+        self.conv2 = nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1, bias=False)
         self.bn2 = nn.BatchNorm2d(64)
         self.relu = nn.ReLU(inplace=True)
 
@@ -118,6 +106,7 @@ class PFLDInference(nn.Module):
         multi_scale = torch.cat([x1, x2, x3], 1)
         landmarks = self.fc(multi_scale)
 
+        # return out1, landmarks # for training
         return landmarks
 
 
@@ -143,3 +132,70 @@ class AuxiliaryNet(nn.Module):
         x = self.fc2(x)
 
         return x
+
+
+class PFLD:
+    def __init__(self, weight, imgsz=112):
+        self.imgsz = imgsz
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        checkpoint = torch.load(weight, map_location=self.device)
+        self.model = PFLDInference().to(self.device)
+        self.model.load_state_dict(checkpoint["pfld_backbone"])
+        self.model.eval()
+
+    def preprocess(self, ori_img, bboxes):
+        height, width = ori_img.shape[:2]
+        faces = []
+        sizes = []
+        edx1s = []
+        edy1s = []
+        x1s = []
+        y1s = []
+        for box in bboxes:
+            x1, y1, x2, y2 = (box[:4] + 0.5).astype(np.int32)
+
+            w = x2 - x1 + 1
+            h = y2 - y1 + 1
+            cx = x1 + w // 2
+            cy = y1 + h // 2
+
+            size = int(max([w, h]) * 1.1)
+            x1 = cx - size // 2
+            x2 = x1 + size
+            y1 = cy - size // 2
+            y2 = y1 + size
+
+            x1 = max(0, x1)
+            y1 = max(0, y1)
+            x2 = min(width, x2)
+            y2 = min(height, y2)
+
+            edx1 = max(0, -x1)
+            edy1 = max(0, -y1)
+            edx2 = max(0, x2 - width)
+            edy2 = max(0, y2 - height)
+
+            cropped = ori_img[y1:y2, x1:x2]
+            if edx1 > 0 or edy1 > 0 or edx2 > 0 or edy2 > 0:
+                cropped = cv2.copyMakeBorder(cropped, edy1, edy2, edx1, edx2, cv2.BORDER_CONSTANT, 0)
+            faces.append(cv2.resize(cropped, (self.imgsz, self.imgsz)))
+            sizes.append(size)
+            edx1s.append(edx1)
+            edy1s.append(edy1)
+            x1s.append(x1)
+            y1s.append(y1)
+            # cv2.imshow('face', cropped)
+            # cv2.waitKey(0)
+        return faces, sizes, edx1s, edy1s, x1s, y1s
+
+    def inference(self, ori_img, face_bboxes):
+        landmarks = []
+        for face, size, edx1, edy1, x1, y1 in zip(*self.preprocess(ori_img, face_bboxes)):
+            face = face.transpose(2, 0, 1)#[:, :, ::-1]
+            face = torch.from_numpy(np.ascontiguousarray(face)).to(self.device).float()
+            face /= 255.
+            landmark = self.model(face[None])
+            pre_landmark = landmark[0]
+            pre_landmark = pre_landmark.cpu().detach().numpy().reshape(-1, 2) * [size, size] - [edx1, edy1] + [x1, y1]
+            landmarks.append(pre_landmark)
+        return landmarks

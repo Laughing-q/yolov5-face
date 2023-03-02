@@ -814,3 +814,35 @@ def polygon_ROIarea(bbox, rangelist, frame=None):
     if total_num > 0:
         return True, warn
     return False, []
+
+def distance(p1, p2):
+    x1, y1 = p1
+    x2, y2 = p2
+    return math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
+
+def point_line_distance(point, line):
+    A = line[1][1] - line[0][1]
+    B = line[0][0] - line[1][0]
+    C = (line[0][1] - line[1][1]) * line[0][0] + \
+        (line[1][0] - line[0][0]) * line[0][1]
+    distance = abs(A * point[0] + B * point[1] + C) / math.sqrt(A**2 + B**2)
+    return distance
+
+def vLineAngle(v1, v2):
+    """
+    计算两条直线的夹角(0-360)
+    """
+    dx1 = v1[1][0] - v1[0][0]
+    dy1 = v1[1][1] - v1[0][1]
+    dx2 = v2[1][0] - v2[0][0]
+    dy2 = v2[1][1] - v2[0][1]
+    angle1 = math.atan2(dy1, dx1)
+    angle1 = float(angle1 * 180 / math.pi)
+    # print(angle1)
+    angle2 = math.atan2(dy2, dx2)
+    angle2 = float(angle2 * 180 / math.pi)
+    # print(angle2)
+    included_angle = abs(angle2 - angle1)
+    # if included_angle < 0:
+        # included_angle += 360
+    return included_angle
