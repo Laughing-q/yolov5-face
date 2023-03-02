@@ -92,20 +92,12 @@ class Yolov5Face:
                     # cv2.imshow('x', alignImg)
                     # cv2.waitKey(1)
                     output[self.names[int(cls)]] += 1
-                    # label = '%s %.2f' % (self.names[int(cls)], conf)
-                    label = '%s' % (self.names[int(cls)])
-                    # print(conf)
-                    # xyxy = [int(i) for i in xyxy]
-                    # im0[xyxy[1]:xyxy[3], xyxy[0]:xyxy[2], :] = 114
-                    # if not self.names[int(cls)] in ['uniform', 'no-uniform']:
+                    label = '%s %.2f' % (self.names[int(cls)], conf)
+                    # label = '%s' % (self.names[int(cls)])
                     if self.show:
-                        plot_one_box(xyxy, img0s[i], label=None,
+                        plot_one_box(xyxy, img0s[i], label=label,
                                      color=self.colors[int(cls)], 
                                      line_thickness=2, landmarks=landmarks)
-                        # label = '%s\n%s\n%s' % ("姓名:张红", "性别:女", "客户类型:VIP客户")
-                        # img0s[i] = plot_one_box_PIL(xyxy, img0s[i], label=label,
-                        #              color=tuple(self.colors[int(cls)]), 
-                        #              line_thickness=2)
 
         if self.show:
             for i in range(len(img0s)):
@@ -119,14 +111,14 @@ class Yolov5Face:
 
 
 if __name__ == "__main__":
-    detector = Yolov5Face(weight_path='/d/projects/yolov5-face/weights/yolov5n-0.5.pt', device='0', img_hw=(640, 640))
+    detector = Yolov5Face(weight_path='./weights/yolov5l-face.pt', device='0', img_hw=(640, 640))
 
-    detector.show = False
+    detector.show = True
 
     save = False
     save_path = './test'
 
-    cap = cv2.VideoCapture('/e/datasets/贵阳银行/face/yas_0715_2gui_face.mp4')
+    cap = cv2.VideoCapture('/home/laughing/Videos/test.mp4')
     frame_num = 0
     areas = []
     # areas = np.array([[973, 287],
@@ -156,5 +148,5 @@ if __name__ == "__main__":
         img, img_raw = detector.preprocess(frame, auto=True)
         preds, _, img_raws = detector.dynamic_detect(img, [img_raw], areas=[areas], conf_threshold=0.5)
         frame_num += 1
-        if vid_writer is not None:
-            vid_writer.write(img_raws[0])
+        # if vid_writer is not None:
+            # vid_writer.write(img_raws[0])
