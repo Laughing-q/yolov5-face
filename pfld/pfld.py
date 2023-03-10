@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import cv2
 import numpy as np
+from .utils import calculate_pitch_yaw_roll
 
 
 def conv_bn(inp, oup, kernel, stride, padding=1):
@@ -142,6 +143,32 @@ class PFLD:
         self.model = PFLDInference().to(self.device)
         self.model.load_state_dict(checkpoint["pfld_backbone"])
         self.model.eval()
+        self.pose_points = [33, 38, 50, 46, 60, 64, 68, 72, 55, 59, 76, 82, 85, 16]  # for 98 points
+
+        # dlib (68 landmark) trached points
+        # TRACKED_POINTS = [17, 21, 22, 26, 36, 39, 42, 45, 31, 35, 48, 54, 57, 8]
+        # wflw(98 landmark) trached points
+        # TRACKED_POINTS = [33, 38, 50, 46, 60, 64, 68, 72, 55, 59, 76, 82, 85, 16]
+        # X-Y-Z with X pointing forward and Y on the left and Z up.
+        # The X-Y-Z coordinates used are like the standard coordinates of ROS (robotic operative system)
+        # OpenCV uses the reference usually used in computer vision:
+        # X points to the right, Y down, Z to the front
+        self.landmarks_3D = np.float32([
+            [6.825897, 6.760612, 4.402142],  # LEFT_EYEBROW_LEFT, 
+            [1.330353, 7.122144, 6.903745],  # LEFT_EYEBROW_RIGHT, 
+            [-1.330353, 7.122144, 6.903745],  # RIGHT_EYEBROW_LEFT,
+            [-6.825897, 6.760612, 4.402142],  # RIGHT_EYEBROW_RIGHT,
+            [5.311432, 5.485328, 3.987654],  # LEFT_EYE_LEFT,
+            [1.789930, 5.393625, 4.413414],  # LEFT_EYE_RIGHT,
+            [-1.789930, 5.393625, 4.413414],  # RIGHT_EYE_LEFT,
+            [-5.311432, 5.485328, 3.987654],  # RIGHT_EYE_RIGHT,
+            [-2.005628, 1.409845, 6.165652],  # NOSE_LEFT,
+            [-2.005628, 1.409845, 6.165652],  # NOSE_RIGHT,
+            [2.774015, -2.080775, 5.048531],  # MOUTH_LEFT,
+            [-2.774015, -2.080775, 5.048531],  # MOUTH_RIGHT,
+            [0.000000, -3.116408, 6.097667],  # LOWER_LIP,
+            [0.000000, -7.415691, 4.070434],  # CHIN
+        ])
 
     def preprocess(self, ori_img, bboxes):
         height, width = ori_img.shape[:2]
@@ -188,8 +215,9 @@ class PFLD:
             # cv2.waitKey(0)
         return faces, sizes, edx1s, edy1s, x1s, y1s
 
-    def inference(self, ori_img, face_bboxes):
+    def inference(self, ori_img, face_bboxes, return_pose=False):
         landmarks = []
+        angles = []
         for face, size, edx1, edy1, x1, y1 in zip(*self.preprocess(ori_img, face_bboxes)):
             face = face.transpose(2, 0, 1)#[:, :, ::-1]
             face = torch.from_numpy(np.ascontiguousarray(face)).to(self.device).float()
@@ -198,4 +226,15 @@ class PFLD:
             pre_landmark = landmark[0]
             pre_landmark = pre_landmark.cpu().detach().numpy().reshape(-1, 2) * [size, size] - [edx1, edy1] + [x1, y1]
             landmarks.append(pre_landmark)
+
+        if return_pose:
+            h, w = ori_img.shape[:2]
+            for landmark in landmarks:
+                angle_landmark = []
+                for index in self.pose_points:
+                    angle_landmark.append(landmark[index])
+                angle_landmark = np.asarray(angle_landmark).reshape((-1, 28))
+                pitch, yaw, roll = calculate_pitch_yaw_roll(angle_landmark[0], self.landmarks_3D, cam_w=w, cam_h=h)
+                angles.append([pitch, yaw, roll])
+            return landmarks, angles
         return landmarks

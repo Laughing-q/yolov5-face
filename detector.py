@@ -13,6 +13,24 @@ from utils.general import non_max_suppression_face, scale_coords, polygon_ROIare
 from pfld import PFLD
 
 
+def plot_text(x, img, text, color=None, thickness=2):
+    tf = max(thickness - 1, 1)  # font thickness
+    t_size = cv2.getTextSize(text, 0, fontScale=thickness / 3, thickness=tf)[0]
+    c1 = int(x[0]), int(x[1])
+    c2 = c1[0] + t_size[0], c1[1] + t_size[1] + 3
+    cv2.rectangle(img, c1, c2, color, -1, cv2.LINE_AA)  # filled
+    cv2.putText(
+        img,
+        text,
+        (c1[0], c1[1] + t_size[1]),
+        0,
+        thickness / 3,
+        [225, 255, 255],
+        thickness=tf,
+        lineType=cv2.LINE_AA,
+    )
+
+
 class Yolov5Face:
     def __init__(self, weight_path, device, img_hw=(384, 640)):
         self.weights = weight_path
@@ -143,17 +161,23 @@ class Yolov5Face:
             return False
         return True
 
+def is_positive(angle, pitch_thres=0.5, yaw_thres=0.5, roll_thres=0.3):
+    assert len(angle) == 3
+    pitch, yaw, roll = angle
+    return (abs(pitch) < pitch_thres and abs(yaw) < yaw_thres and abs(roll) < roll_thres)
+
 
 if __name__ == "__main__":
     detector = Yolov5Face(weight_path="./weights/yolov5l-face.pt", device="0", img_hw=(640, 640))
     pfld = PFLD(weight="weights/checkpoint.pth.tar")
 
-    detector.show = True
+    detector.show = False
 
     save = False
     save_path = "./test"
 
     cap = cv2.VideoCapture("/d/dataset/sleep/videos/172.16.11.133_01_2022102412014046.mp4")
+    # cap = cv2.VideoCapture("/home/laughing/Videos/test.mp4")
     frame_num = 0
     areas = []
     # areas = np.array([[973, 287],
@@ -192,19 +216,55 @@ if __name__ == "__main__":
         preds, _, img_raws = detector.dynamic_detect(img, [img_raw], areas=[areas], conf_threshold=0.5)
         frame_num += 1
         bboxes = preds[0][:, :4].cpu().numpy()
-        # if len(bboxes):
-        #     landmarks = pfld.inference(img_raw, bboxes)
-        #     # TRACKED_POINTS = [33, 38, 50, 46, 60, 64, 68, 72, 55, 59, 76, 82, 85, 16]
-        #     for i, landmark in enumerate(landmarks):
-        #         box = bboxes[i]
-        #         for j, (x, y) in enumerate(landmark.astype(np.int32)):
-        #             # if j in TRACKED_POINTS:
-        #             cv2.circle(img_raw, (x, y), 1, (255, 0, 0), 2)
-        #         cv2.rectangle(img_raw, (int(box[0]), int(box[1])), (int(box[2]), int(box[3])), (0, 0, 255), 2)
-        # cv2.imshow('p', img_raw)
-        # key = cv2.waitKey(0 if pause else 1)
-        # pause = True if key == ord(' ') else False
-        # if key == ord('q') or key == ord('e') or key == 27:
-        #     break
+        if len(bboxes):
+            # landmarks = pfld.inference(img_raw, bboxes)
+            landmarks, poses = pfld.inference(img_raw, bboxes, return_pose=True)
+            # TRACKED_POINTS = [33, 38, 50, 46, 60, 64, 68, 72, 55, 59, 76, 82, 85, 16]
+            for i, landmark in enumerate(landmarks):
+                box = bboxes[i]
+                for j, (x, y) in enumerate(landmark.astype(np.int32)):
+                    # if j in TRACKED_POINTS:
+                    cv2.circle(img_raw, (x, y), 1, (255, 0, 0), 2)
+                # cv2.rectangle(img_raw, (int(box[0]), int(box[1])), (int(box[2]), int(box[3])), (0, 0, 255), 2)
+                angle = poses[i]
+                positive = is_positive(angle)
+                label = "positive" if positive else "crooked"
+                plot_one_box(
+                    [int(b) for b in box],
+                    img_raw,
+                    label=label,
+                    color=(0, 255, 0) if positive else (0, 0, 255),
+                    line_thickness=2,
+                )
+                # pitch = "pitch: " + str(round(angle[0], 2))
+                # yaw = "yaw: " + str(round(angle[1], 2))
+                # roll = "roll: " + str(round(angle[2], 2))
+                # plot_text(
+                #     (box[0], box[1] - (18 * 3)),
+                #     img_raw,
+                #     pitch,
+                #     color=(255, 150, 125),
+                #     thickness=2,
+                # )
+                # plot_text(
+                #     (box[0], box[1] - (18 * 2)),
+                #     img_raw,
+                #     yaw,
+                #     color=(255, 150, 125),
+                #     thickness=2,
+                # )
+                # plot_text(
+                #     (box[0], box[1] - (18 * 1)),
+                #     img_raw,
+                #     roll,
+                #     color=(255, 150, 125),
+                #     thickness=2,
+                # )
+        cv2.imshow('cv2', img_raw)
+        key = cv2.waitKey(0 if pause else 1)
+        pause = True if key == ord(' ') else False
+        if key == ord('q') or key == ord('e') or key == 27:
+            break
+
         # if vid_writer is not None:
         # vid_writer.write(img_raws[0])
